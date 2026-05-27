@@ -16,6 +16,7 @@ env:
   ECR_REPOSITORY: social-rankings-stage-repo
   ECS_CLUSTER: social-rankings-stage-cluster
   ECS_SERVICE: social-rankings-stage-service
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::716525549892:role/github-actions-stage-deploy
 
 jobs:
   test:
@@ -48,7 +49,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -81,7 +82,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Force new ECS deployment for stage

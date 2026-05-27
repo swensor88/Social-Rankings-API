@@ -159,8 +159,8 @@ Pipeline:
 3. Build and push multi-arch Docker image to ECR (`latest` and commit SHA tags).
 4. Force ECS rolling deployment on the stage service and wait for stability.
 
-Required GitHub secrets:
-- `AWS_DEPLOY_ROLE_ARN`
+No additional GitHub Actions secrets/variables are required for role assumption.
+The stage deploy role ARN is defined directly in `.github/workflows/ci-cd.yml`.
 
 ## Security Baseline for New AWS Account
 

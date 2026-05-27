@@ -2,6 +2,94 @@ locals {
   name_prefix = "social-rankings-stage"
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+
+  client_id_list = ["sts.amazonaws.com"]
+
+  thumbprint_list = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1"
+  ]
+}
+
+data "aws_iam_policy_document" "github_actions_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/${var.github_stage_branch}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_actions_stage_deploy" {
+  name               = "github-actions-stage-deploy"
+  assume_role_policy = data.aws_iam_policy_document.github_actions_assume.json
+}
+
+data "aws_iam_policy_document" "github_actions_stage_deploy" {
+  statement {
+    sid    = "ECRAuth"
+    effect = "Allow"
+    actions = [
+      "ecr:GetAuthorizationToken"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "ECRPush"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:DescribeRepositories",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart"
+    ]
+    resources = [
+      "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${local.name_prefix}-repo"
+    ]
+  }
+
+  statement {
+    sid    = "ECSDeploy"
+    effect = "Allow"
+    actions = [
+      "ecs:UpdateService",
+      "ecs:DescribeServices"
+    ]
+    resources = [
+      "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:service/${local.name_prefix}-cluster/${local.name_prefix}-service"
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "github_actions_stage_deploy" {
+  name   = "github-actions-stage-deploy"
+  role   = aws_iam_role.github_actions_stage_deploy.id
+  policy = data.aws_iam_policy_document.github_actions_stage_deploy.json
+}
+
 module "vpc" {
   source      = "../../modules/vpc"
   name_prefix = local.name_prefix
