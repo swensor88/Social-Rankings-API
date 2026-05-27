@@ -1,8 +1,3 @@
-variable "alb_certificate_arn" {
-  type        = string
-  description = "ACM certificate ARN for ALB HTTPS listener"
-}
-
 variable "db_name" {
   type    = string
   default = "social_rankings"

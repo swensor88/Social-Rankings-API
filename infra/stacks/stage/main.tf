@@ -25,8 +25,8 @@ module "ecs" {
   private_subnet_ids      = module.vpc.private_subnet_ids
   task_execution_role_arn = module.iam.task_execution_role_arn
   task_role_arn           = module.iam.task_role_arn
-  alb_certificate_arn     = var.alb_certificate_arn
   api_key_secret_arn      = module.secrets.api_key_secret_arn
+  db_secret_arn           = module.secrets.db_secret_arn
 }
 
 module "rds" {
@@ -55,9 +55,8 @@ module "secrets" {
 }
 
 module "apigateway" {
-  source      = "../../modules/apigateway"
-   db_secret_arn           = module.secrets.db_secret_arn
-  name_prefix = local.name_prefix
+  source       = "../../modules/apigateway"
+  name_prefix  = local.name_prefix
   alb_dns_name = module.ecs.alb_dns_name
-  stage_name  = "stage"
+  stage_name   = "stage"
 }

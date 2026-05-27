@@ -50,10 +50,6 @@ variable "task_role_arn" {
   type = string
 }
 
-variable "alb_certificate_arn" {
-  type = string
-}
-
 variable "api_key_secret_arn" {
   type = string
 }
