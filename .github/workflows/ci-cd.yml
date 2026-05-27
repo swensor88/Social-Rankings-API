@@ -1,9 +1,11 @@
-name: CI-CD
+name: Stage CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [stage]
   pull_request:
+    branches: [stage]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,6 +14,8 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: social-rankings-stage-repo
+  ECS_CLUSTER: social-rankings-stage-cluster
+  ECS_SERVICE: social-rankings-stage-service
 
 jobs:
   test:
@@ -36,7 +40,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,42 +55,46 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image (latest + sha)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --push \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
 
   deploy-stage:
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/stage'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Install Terramate
+      - name: Force new ECS deployment for stage
         run: |
-          curl -L https://github.com/terramate-io/terramate/releases/download/v0.11.4/terramate_0.11.4_linux_x86_64.tar.gz | tar -xz
-          sudo mv terramate /usr/local/bin/terramate
+          aws ecs update-service \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --force-new-deployment
 
-      - name: Terraform apply stage
-        working-directory: infra/stacks/stage
-        env:
-          TF_VAR_alb_certificate_arn: ${{ secrets.STAGE_ALB_CERTIFICATE_ARN }}
-          TF_VAR_db_password: ${{ secrets.STAGE_DB_PASSWORD }}
-          TF_VAR_api_key: ${{ secrets.STAGE_API_KEY }}
+      - name: Wait for ECS service stability
         run: |
-          terraform init
-          terraform apply -auto-approve
+          aws ecs wait services-stable \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"

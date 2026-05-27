@@ -154,15 +154,13 @@ terraform apply
 Workflow: `.github/workflows/ci-cd.yml`
 
 Pipeline:
-1. Run tests.
-2. Build and push Docker image to ECR.
-3. Apply stage infrastructure/deploy.
+1. Trigger on push to `stage` (and manually via `workflow_dispatch`).
+2. Run tests.
+3. Build and push multi-arch Docker image to ECR (`latest` and commit SHA tags).
+4. Force ECS rolling deployment on the stage service and wait for stability.
 
 Required GitHub secrets:
 - `AWS_DEPLOY_ROLE_ARN`
-- `STAGE_ALB_CERTIFICATE_ARN`
-- `STAGE_DB_PASSWORD`
-- `STAGE_API_KEY`
 
 ## Security Baseline for New AWS Account
 
