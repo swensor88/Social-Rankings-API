@@ -35,6 +35,6 @@ data "aws_iam_policy_document" "ecs_task_inline" {
 }
 
 resource "aws_iam_role_policy" "ecs_task_secrets" {
-  role   = aws_iam_role.ecs_task_role.id
+  role   = aws_iam_role.ecs_task_execution_role.id
   policy = data.aws_iam_policy_document.ecs_task_inline.json
 }

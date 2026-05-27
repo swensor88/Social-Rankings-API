@@ -108,7 +108,8 @@ resource "aws_ecs_task_definition" "this" {
       ]
       environment = [
         { name = "APP_ENV", value = var.environment },
-        { name = "AWS_REGION", value = var.region }
+        { name = "AWS_REGION", value = var.region },
+        { name = "RUN_MIGRATIONS_ON_STARTUP", value = "false" }
       ]
       secrets = [
         { name = "API_KEY", valueFrom = var.api_key_secret_arn },
@@ -145,5 +146,5 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
-  depends_on = [aws_lb_listener.https]
+  depends_on = [aws_lb_listener.http]
 }
