@@ -36,8 +36,8 @@ data "aws_iam_policy_document" "github_actions_assume" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/${var.github_stage_branch}",
-        "repo:${var.github_repository_owner}/${lower(var.github_repository_name)}:ref:refs/heads/${var.github_stage_branch}",
+        "repo:${var.github_repository_owner}/${var.github_repository_name}:*",
+        "repo:${var.github_repository_owner}/${lower(var.github_repository_name)}:*",
       ]
     }
   }
