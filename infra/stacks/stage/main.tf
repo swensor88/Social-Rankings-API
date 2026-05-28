@@ -38,6 +38,8 @@ data "aws_iam_policy_document" "github_actions_assume" {
       values = [
         "repo:${var.github_repository_owner}/${var.github_repository_name}:*",
         "repo:${var.github_repository_owner}/${lower(var.github_repository_name)}:*",
+        "repo:${lower(var.github_repository_owner)}/${var.github_repository_name}:*",
+        "repo:${lower(var.github_repository_owner)}/${lower(var.github_repository_name)}:*",
       ]
     }
   }
