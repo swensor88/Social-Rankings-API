@@ -52,18 +52,26 @@ data "aws_iam_policy_document" "github_actions_prod_deploy" {
   }
 
   statement {
-    sid    = "ECRPush"
+    sid    = "ECRReadStage"
     effect = "Allow"
     actions = [
-      "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
-      "ecr:CompleteLayerUpload",
+      "ecr:DescribeImages",
+      "ecr:DescribeRepositories"
+    ]
+    resources = [
+      "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/social-rankings-stage-repo"
+    ]
+  }
+
+  statement {
+    sid    = "ECRWriteProd"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchGetImage",
       "ecr:DescribeImages",
       "ecr:DescribeRepositories",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:InitiateLayerUpload",
-      "ecr:PutImage",
-      "ecr:UploadLayerPart"
+      "ecr:PutImage"
     ]
     resources = [
       "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${local.name_prefix}-repo"
@@ -75,10 +83,22 @@ data "aws_iam_policy_document" "github_actions_prod_deploy" {
     effect = "Allow"
     actions = [
       "ecs:UpdateService",
-      "ecs:DescribeServices"
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+      "ecs:RegisterTaskDefinition"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "PassTaskRoles"
+    effect = "Allow"
+    actions = [
+      "iam:PassRole"
     ]
     resources = [
-      "arn:aws:ecs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:service/${local.name_prefix}-cluster/${local.name_prefix}-service"
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-ecs-task-execution-role",
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-ecs-task-role",
     ]
   }
 }

@@ -1,0 +1,181 @@
+name: Production Promotion
+
+on:
+  workflow_run:
+    workflows: ["Stage CI/CD"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Stage image tag to promote (usually commit SHA)"
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  SOURCE_ECR_REPOSITORY: social-rankings-stage-repo
+  TARGET_ECR_REPOSITORY: social-rankings-prod-repo
+  ECS_CLUSTER: social-rankings-prod-cluster
+  ECS_SERVICE: social-rankings-prod-service
+  AWS_DEPLOY_ROLE_ARN: arn:aws:iam::716525549892:role/github-actions-prod-deploy
+
+jobs:
+  promote-to-prod:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'stage'
+      )
+    environment: production
+    steps:
+      - name: Resolve image tag
+        id: resolve_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IMAGE_TAG="${{ inputs.image_tag }}"
+          else
+            IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
+          fi
+
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "Image tag is empty; cannot continue." >&2
+            exit 1
+          fi
+
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Promote image manifest from stage to prod ECR
+        id: promote_image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MANIFEST=$(aws ecr batch-get-image \
+            --region "$AWS_REGION" \
+            --repository-name "$SOURCE_ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --accepted-media-types \
+              application/vnd.docker.distribution.manifest.list.v2+json \
+              application/vnd.oci.image.index.v1+json \
+              application/vnd.docker.distribution.manifest.v2+json \
+            --query 'images[0].imageManifest' \
+            --output text)
+
+          if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
+            echo "Could not find source image tag '$IMAGE_TAG' in $SOURCE_ECR_REPOSITORY" >&2
+            exit 1
+          fi
+
+          aws ecr put-image \
+            --region "$AWS_REGION" \
+            --repository-name "$TARGET_ECR_REPOSITORY" \
+            --image-tag "$IMAGE_TAG" \
+            --image-manifest "$MANIFEST" >/dev/null
+
+          aws ecr put-image \
+            --region "$AWS_REGION" \
+            --repository-name "$TARGET_ECR_REPOSITORY" \
+            --image-tag latest \
+            --image-manifest "$MANIFEST" >/dev/null
+
+          IMAGE_DIGEST=$(aws ecr describe-images \
+            --region "$AWS_REGION" \
+            --repository-name "$TARGET_ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+
+          if [ -z "$IMAGE_DIGEST" ] || [ "$IMAGE_DIGEST" = "None" ]; then
+            echo "Failed to resolve promoted image digest in $TARGET_ECR_REPOSITORY" >&2
+            exit 1
+          fi
+
+          IMAGE_URI="716525549892.dkr.ecr.${AWS_REGION}.amazonaws.com/${TARGET_ECR_REPOSITORY}@${IMAGE_DIGEST}"
+
+          echo "IMAGE_DIGEST=$IMAGE_DIGEST" >> "$GITHUB_ENV"
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Register task definition revision pinned to immutable digest
+        id: register_td
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_TD_ARN=$(aws ecs describe-services \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          aws ecs describe-task-definition \
+            --region "$AWS_REGION" \
+            --task-definition "$CURRENT_TD_ARN" \
+            --query 'taskDefinition' \
+            --output json > task-def.json
+
+          jq --arg IMAGE_URI "$IMAGE_URI" '
+            .containerDefinitions = (
+              .containerDefinitions | map(
+                if .name == "api" then . + {image: $IMAGE_URI} else . end
+              )
+            )
+            | del(
+                .taskDefinitionArn,
+                .revision,
+                .status,
+                .requiresAttributes,
+                .compatibilities,
+                .registeredAt,
+                .registeredBy
+              )
+          ' task-def.json > new-task-def.json
+
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --region "$AWS_REGION" \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "NEW_TD_ARN=$NEW_TD_ARN" >> "$GITHUB_ENV"
+          echo "task_definition=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy promoted revision to production ECS service
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws ecs update-service \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$NEW_TD_ARN" \
+            --force-new-deployment >/dev/null
+
+          aws ecs wait services-stable \
+            --region "$AWS_REGION" \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "Promoted stage image tag: $IMAGE_TAG"
+          echo "Deployed immutable image: $IMAGE_URI"
+          echo "Task definition: $NEW_TD_ARN"

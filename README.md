@@ -181,16 +181,28 @@ terramate run --disable-safeguards git-uncommitted -C infra/stacks/config-parser
 
 ## CI/CD
 
-Workflow: `.github/workflows/ci-cd.yml`
+Workflows:
+- `.github/workflows/ci-cd.yml` (stage test/build/deploy)
+- `.github/workflows/prod-promote.yml` (immutable stage-to-prod promotion)
 
-Pipeline:
+Stage pipeline (`ci-cd.yml`):
 1. Trigger on push to `stage` (and manually via `workflow_dispatch`).
 2. Run tests.
 3. Build and push multi-arch Docker image to ECR (`latest` and commit SHA tags).
 4. Force ECS rolling deployment on the stage service and wait for stability.
 
+Production promotion pipeline (`prod-promote.yml`):
+1. Trigger automatically when stage workflow succeeds on `stage` branch, or manually by `workflow_dispatch` with an `image_tag`.
+2. Assume production deploy role via OIDC.
+3. Copy the exact image manifest from stage ECR repo to prod ECR repo (no rebuild).
+4. Register a new ECS task definition pinned to immutable image digest (`repo@sha256:...`).
+5. Deploy the new task definition to prod ECS service and wait for stability.
+
+Recommended safety gate:
+- Use GitHub Environments and require approval for the `production` environment used by `prod-promote.yml`.
+
 No additional GitHub Actions secrets/variables are required for role assumption.
-The stage deploy role ARN is defined directly in `.github/workflows/ci-cd.yml`.
+Deploy role ARNs are defined directly in workflow files.
 
 ## Security Baseline for New AWS Account
 
