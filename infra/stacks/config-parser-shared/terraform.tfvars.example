@@ -1,0 +1,23 @@
+config_parser_environments = {
+  stage = {
+    s3_bucket_name     = "replace-with-aws-config-bucket"
+    s3_key_prefix      = "AWSLogs/716525549892/Config/us-east-1/"
+    subnet_ids         = ["subnet-aaaa1111", "subnet-bbbb2222"]
+    security_group_ids = ["sg-aaaa1111"]
+    cluster_endpoint   = "stage-neptune-cluster.cluster-xxxxxxxxxxxx.us-east-1.neptune.amazonaws.com"
+    cluster_port       = 8182
+    timeout            = 120
+    memory_size        = 256
+  }
+
+  prod = {
+    s3_bucket_name     = "replace-with-aws-config-bucket"
+    s3_key_prefix      = "AWSLogs/716525549892/Config/us-east-1/"
+    subnet_ids         = ["subnet-cccc3333", "subnet-dddd4444"]
+    security_group_ids = ["sg-bbbb2222"]
+    cluster_endpoint   = "prod-neptune-cluster.cluster-yyyyyyyyyyyy.us-east-1.neptune.amazonaws.com"
+    cluster_port       = 8182
+    timeout            = 120
+    memory_size        = 256
+  }
+}

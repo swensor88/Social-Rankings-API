@@ -111,6 +111,7 @@ Region: `us-east-1`
 Stacks:
 - `infra/stacks/stage`
 - `infra/stacks/prod`
+- `infra/stacks/config-parser-shared`
 
 Modules:
 - `vpc`, `rds`, `secrets`, `iam`, `ecs`, `apigateway`
@@ -147,6 +148,35 @@ cp infra/stacks/prod/terraform.tfvars.example infra/stacks/prod/terraform.tfvars
 cd infra/stacks/prod
 terraform init
 terraform apply
+```
+
+### Shared Config Parser Lambda Stack
+
+Purpose:
+- Trigger Lambda from AWS Config `.gz` files delivered to S3.
+- Parse configuration items and push graph data to Neptune.
+- Reuse one Terramate stack for multiple environments (`stage`, `prod`) via a map.
+
+Quick start (stage-only):
+
+1. Edit stage starter vars in `infra/stacks/config-parser-shared/terraform.tfvars`:
+- `s3_bucket_name`: bucket where AWS Config delivers files.
+- `subnet_ids`: private subnets with Neptune network access.
+- `security_group_ids`: security group that allows Neptune access.
+- `cluster_endpoint`: Neptune cluster endpoint for stage.
+
+2. Plan/apply with Terramate:
+
+```bash
+terramate run -C infra/stacks/config-parser-shared -- terraform init
+terramate run -C infra/stacks/config-parser-shared -- terraform plan
+terramate run -C infra/stacks/config-parser-shared -- terraform apply
+```
+
+If Terramate safeguards block due to local changes, use:
+
+```bash
+terramate run --disable-safeguards git-uncommitted -C infra/stacks/config-parser-shared -- terraform apply -auto-approve
 ```
 
 ## CI/CD
